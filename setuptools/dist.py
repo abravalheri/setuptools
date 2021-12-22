@@ -318,6 +318,8 @@ def check_requirements(dist, attr, value):
 
 def check_specifier(dist, attr, value):
     """Verify that value is a valid version specifier"""
+    if isinstance(value, packaging.specifiers.SpecifierSet):
+        return value
     try:
         packaging.specifiers.SpecifierSet(value)
     except (packaging.specifiers.InvalidSpecifier, AttributeError) as error:
