@@ -26,7 +26,6 @@ bug reports or API stability):
 Again, this is not a formal definition! Just a "taste" of the module.
 """
 
-import io
 import os
 import sys
 import tokenize
@@ -34,6 +33,8 @@ import shutil
 import contextlib
 import tempfile
 import warnings
+from itertools import chain
+from uuid import uuid4
 
 import setuptools
 import distutils
@@ -45,35 +46,7 @@ __all__ = ['get_requires_for_build_sdist',
            'prepare_metadata_for_build_wheel',
            'build_wheel',
            'build_sdist',
-           '__legacy__',
-           'SetupRequirementsError']
-
-
-class SetupRequirementsError(BaseException):
-    def __init__(self, specifiers):
-        self.specifiers = specifiers
-
-
-class Distribution(setuptools.dist.Distribution):
-    def fetch_build_eggs(self, specifiers):
-        specifier_list = list(map(str, parse_requirements(specifiers)))
-
-        raise SetupRequirementsError(specifier_list)
-
-    @classmethod
-    @contextlib.contextmanager
-    def patch(cls):
-        """
-        Replace
-        distutils.dist.Distribution with this class
-        for the duration of this context.
-        """
-        orig = distutils.core.Distribution
-        distutils.core.Distribution = cls
-        try:
-            yield
-        finally:
-            distutils.core.Distribution = orig
+           '__legacy__']
 
 
 @contextlib.contextmanager
@@ -111,19 +84,46 @@ def _file_with_extension(directory, extension):
     return file
 
 
-def _open_setup_script(setup_script):
-    if not os.path.exists(setup_script):
-        # Supply a default setup.py
-        return io.StringIO(u"from setuptools import setup; setup()")
-
-    return getattr(tokenize, 'open', open)(setup_script)
-
-
 @contextlib.contextmanager
 def suppress_known_deprecation():
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', 'setup.py install is deprecated')
         yield
+
+
+@contextlib.contextmanager
+def _patch_distutils_core():
+    """Make sure distutils.core uses the latest enhancements"""
+    orig_exec = exec
+    if hasattr(distutils.core, "run_commands"):
+        yield  # do nothing, already using the improved version of distutils
+        return
+
+    def _exec(code, global_vars):
+        try:
+            fid, tmp = tempfile.mkstemp(suffix=f"{uuid4()}-setup.py", text=False)
+            os.close(fid)  # Ignore the low level API
+            with open(tmp, "wb") as f:
+                f.write(code)
+            with tokenize.open(tmp) as f:
+                code = f.read().replace(r'\r\n', r'\n')
+        finally:
+            os.remove(tmp)
+        orig_exec(code, {**global_vars, "__name__": "__main__"})
+
+    def _run_commands(dist):
+        try:
+            dist.run_commands()
+        except Exception as ex:
+            raise SystemExit("error:" + str(ex))
+
+    distutils.core.exec = _exec
+    distutils.core.run_commands = _run_commands
+    try:
+        yield
+    finally:
+        distutils.core.exec = orig_exec
+        del distutils.core.run_commands
 
 
 class _BuildMetaBackend(object):
@@ -133,29 +133,36 @@ class _BuildMetaBackend(object):
         config_settings.setdefault('--global-option', [])
         return config_settings
 
+    def _get_dist(self, setup_script="setup.py"):
+        """Retrieve a distribution object already configured."""
+
+        if os.path.exists(setup_script) and os.stat(setup_script).st_size > 0:
+            with no_install_setup_requires(), _patch_distutils_core():
+                dist = distutils.core.run_setup(setup_script, stop_after="init")
+        else:
+            dist = setuptools.dist.Distribution()
+
+        dist.parse_config_files()
+        dist.finalize_options()
+        return dist
+
     def _get_build_requires(self, config_settings, requirements):
-        config_settings = self._fix_config(config_settings)
+        dist = self._get_dist()
+        parsed = chain(parse_requirements(requirements),
+                       parse_requirements(dist.setup_requires))
+        deduplicated = {r.key: str(r) for r in parsed}
+        return list(deduplicated.values())
 
-        sys.argv = sys.argv[:1] + ['egg_info'] + \
-            config_settings["--global-option"]
-        try:
-            with Distribution.patch():
-                self.run_setup()
-        except SetupRequirementsError as e:
-            requirements += e.specifiers
-
-        return requirements
-
-    def run_setup(self, setup_script='setup.py'):
+    def run_command(self, *args):
         # Note that we can reuse our build directory between calls
         # Correctness comes first, then optimization later
-        __file__ = setup_script
-        __name__ = '__main__'
+        dist = self._get_dist()
+        dist.script_name = sys.argv[0]
+        dist.script_args = args
+        dist.parse_command_line()
 
-        with _open_setup_script(__file__) as f:
-            code = f.read().replace(r'\r\n', r'\n')
-
-        exec(compile(code, __file__, 'exec'), locals())
+        with _patch_distutils_core():
+            return distutils.core.run_commands(dist)
 
     def get_requires_for_build_wheel(self, config_settings=None):
         config_settings = self._fix_config(config_settings)
@@ -168,10 +175,7 @@ class _BuildMetaBackend(object):
 
     def prepare_metadata_for_build_wheel(self, metadata_directory,
                                          config_settings=None):
-        sys.argv = sys.argv[:1] + [
-            'dist_info', '--egg-base', metadata_directory]
-        with no_install_setup_requires():
-            self.run_setup()
+        self.run_command('dist_info', '--egg-base', metadata_directory)
 
         dist_info_directory = metadata_directory
         while True:
@@ -208,11 +212,10 @@ class _BuildMetaBackend(object):
         # Build in a temporary directory, then copy to the target.
         os.makedirs(result_directory, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=result_directory) as tmp_dist_dir:
-            sys.argv = (sys.argv[:1] + setup_command +
-                        ['--dist-dir', tmp_dist_dir] +
-                        config_settings["--global-option"])
-            with no_install_setup_requires():
-                self.run_setup()
+            self.run_command(
+                *setup_command, "--dist-dir", tmp_dist_dir,
+                *config_settings["--global-option"]
+            )
 
             result_basename = _file_with_extension(
                 tmp_dist_dir, result_extension)
@@ -247,11 +250,18 @@ class _BuildMetaLegacyBackend(_BuildMetaBackend):
     packaging mechanism,
     and will eventually be removed.
     """
-    def run_setup(self, setup_script='setup.py'):
+
+    def run_command(self, *args):
         # In order to maintain compatibility with scripts assuming that
         # the setup.py script is in a directory on the PYTHONPATH, inject
         # '' into sys.path. (pypa/setuptools#1642)
         sys_path = list(sys.path)           # Save the original path
+
+        setup_script = "setup.py"
+        if not os.path.exists(setup_script) or os.stat(setup_script).st_size == 0:
+            msg = f"__legacy__ backend conflicts with empty/missing {setup_script!r}"
+            warnings.warn(msg, setuptools.SetuptoolsDeprecationWarning)
+            return super().run_command(*args)
 
         script_dir = os.path.dirname(os.path.abspath(setup_script))
         if script_dir not in sys.path:
@@ -259,13 +269,10 @@ class _BuildMetaLegacyBackend(_BuildMetaBackend):
 
         # Some setup.py scripts (e.g. in pygame and numpy) use sys.argv[0] to
         # get the directory of the source code. They expect it to refer to the
-        # setup.py script.
-        sys_argv_0 = sys.argv[0]
-        sys.argv[0] = setup_script
-
+        # setup.py script. ==> This is already handled in distutils.core
         try:
-            super(_BuildMetaLegacyBackend,
-                  self).run_setup(setup_script=setup_script)
+            with no_install_setup_requires(), _patch_distutils_core():
+                distutils.core.run_setup(setup_script, args)
         finally:
             # While PEP 517 frontends should be calling each hook in a fresh
             # subprocess according to the standard (and thus it should not be
@@ -273,7 +280,6 @@ class _BuildMetaLegacyBackend(_BuildMetaBackend):
             # the original path so that the path manipulation does not persist
             # within the hook after run_setup is called.
             sys.path[:] = sys_path
-            sys.argv[0] = sys_argv_0
 
 
 # The primary backend
