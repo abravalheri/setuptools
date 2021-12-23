@@ -1,6 +1,5 @@
 import importlib
 import os
-import re
 import shutil
 import tarfile
 import warnings

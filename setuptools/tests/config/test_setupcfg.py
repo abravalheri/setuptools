@@ -9,7 +9,6 @@ import pytest
 from distutils.errors import DistutilsOptionError, DistutilsFileError
 from setuptools.dist import Distribution, _Distribution
 from setuptools.config.setupcfg import ConfigHandler, read_configuration
-from distutils.core import Command
 from ..textwrap import DALS
 
 
