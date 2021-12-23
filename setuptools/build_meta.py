@@ -48,6 +48,10 @@ __all__ = ['get_requires_for_build_sdist',
            'build_sdist',
            '__legacy__']
 
+SETUP_SCRIPT = "setup.py"
+CONFIG_FILE = "pyproject.toml"
+LEGACY_CONFIG_FILE = "setup.cfg"
+
 
 @contextlib.contextmanager
 def no_install_setup_requires():
@@ -79,7 +83,7 @@ def _file_with_extension(directory, extension):
         file, = matching
     except ValueError:
         raise ValueError(
-            'No distribution was found. Ensure that `setup.py` '
+            f'No distribution was found. Ensure that `{SETUP_SCRIPT}` '
             'is not empty and that it calls `setup()`.')
     return file
 
@@ -87,7 +91,7 @@ def _file_with_extension(directory, extension):
 @contextlib.contextmanager
 def suppress_known_deprecation():
     with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', 'setup.py install is deprecated')
+        warnings.filterwarnings('ignore', f'{SETUP_SCRIPT} install is deprecated')
         yield
 
 
@@ -101,7 +105,7 @@ def _patch_distutils_core():
 
     def _exec(code, global_vars):
         try:
-            fid, tmp = tempfile.mkstemp(suffix=f"{uuid4()}-setup.py", text=False)
+            fid, tmp = tempfile.mkstemp(suffix=f"{uuid4()}-{SETUP_SCRIPT}", text=False)
             os.close(fid)  # Ignore the low level API
             with open(tmp, "wb") as f:
                 f.write(code)
@@ -133,17 +137,29 @@ class _BuildMetaBackend(object):
         config_settings.setdefault('--global-option', [])
         return config_settings
 
-    def _get_dist(self, setup_script="setup.py"):
+    def _get_dist(self):
         """Retrieve a distribution object already configured."""
 
-        if os.path.exists(setup_script) and os.stat(setup_script).st_size > 0:
+        if os.path.exists(SETUP_SCRIPT) and os.stat(SETUP_SCRIPT).st_size > 0:
             with no_install_setup_requires(), _patch_distutils_core():
-                dist = distutils.core.run_setup(setup_script, stop_after="init")
+                dist = distutils.core.run_setup(SETUP_SCRIPT, stop_after="init")
         else:
             dist = setuptools.dist.Distribution()
 
+        if os.path.exists(LEGACY_CONFIG_FILE):
+            msg = f"The usage of {LEGACY_CONFIG_FILE!r} is deprecated, "
+            msg += "please adopt pyproject.toml for configuration. "
+            msg += "Automation tools like `ini2toml` can help you in this process."
+            warnings.warn(msg, setuptools.SetuptoolsDeprecationWarning)
+
         dist.parse_config_files()
-        dist.finalize_options()
+        # ^-- Should a build (supposed to be isolated) be allowed to check
+        #     for configuration files in the system (e.g. user home)?
+
+        if os.path.exists(CONFIG_FILE):
+            from setuptools.config import pyprojecttoml
+            pyprojecttoml.apply_configuration(dist, CONFIG_FILE)
+
         return dist
 
     def _get_build_requires(self, config_settings, requirements):
@@ -257,13 +273,18 @@ class _BuildMetaLegacyBackend(_BuildMetaBackend):
         # '' into sys.path. (pypa/setuptools#1642)
         sys_path = list(sys.path)           # Save the original path
 
-        setup_script = "setup.py"
-        if not os.path.exists(setup_script) or os.stat(setup_script).st_size == 0:
-            msg = f"__legacy__ backend conflicts with empty/missing {setup_script!r}"
+        if not os.path.exists(SETUP_SCRIPT) or os.stat(SETUP_SCRIPT).st_size == 0:
+            msg = f"__legacy__ backend conflicts with empty/missing {SETUP_SCRIPT!r}"
             warnings.warn(msg, setuptools.SetuptoolsDeprecationWarning)
             return super().run_command(*args)
 
-        script_dir = os.path.dirname(os.path.abspath(setup_script))
+        if os.path.exists(CONFIG_FILE):
+            from setuptools.config import pyprojecttoml
+            if pyprojecttoml.read_configuration(CONFIG_FILE):
+                msg = f"__legacy__ backend is incompatible with {CONFIG_FILE!r}"
+                warnings.warn(msg, setuptools.SetuptoolsDeprecationWarning)
+
+        script_dir = os.path.dirname(os.path.abspath(SETUP_SCRIPT))
         if script_dir not in sys.path:
             sys.path.insert(0, script_dir)
 
@@ -272,7 +293,7 @@ class _BuildMetaLegacyBackend(_BuildMetaBackend):
         # setup.py script. ==> This is already handled in distutils.core
         try:
             with no_install_setup_requires(), _patch_distutils_core():
-                distutils.core.run_setup(setup_script, args)
+                distutils.core.run_setup(SETUP_SCRIPT, args)
         finally:
             # While PEP 517 frontends should be calling each hook in a fresh
             # subprocess according to the standard (and thus it should not be
