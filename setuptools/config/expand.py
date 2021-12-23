@@ -74,12 +74,13 @@ def glob_relative(patterns, root_dir=None):
             # then expand the glob pattern while keeping paths *relative*:
             glob_path = os.path.abspath(os.path.join(root_dir, value))
             expanded_values.extend(sorted(
-                os.path.relpath(path, root_dir)
+                os.path.relpath(path, root_dir).replace(os.sep, "/")
                 for path in iglob(glob_path, recursive=True)))
 
         else:
             # take the value as-is
-            expanded_values.append(os.path.relpath(value, root_dir))
+            path = os.path.relpath(value, root_dir).replace(os.sep, "/")
+            expanded_values.append(path)
 
     return expanded_values
 

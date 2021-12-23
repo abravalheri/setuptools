@@ -1,4 +1,3 @@
-import os
 from configparser import ConfigParser
 
 from setuptools.config.pyprojecttoml import read_configuration, expand_configuration
@@ -100,7 +99,7 @@ def test_read_configuration(tmp_path):
     assert "" in expanded["tool"]["setuptools"]["package-data"]
     assert "*" not in expanded["tool"]["setuptools"]["package-data"]
     assert expanded["tool"]["setuptools"]["data-files"] == [
-        ("data", [os.path.join("files", "file.txt")])
+        ("data", ["files/file.txt"])
     ]
 
 
