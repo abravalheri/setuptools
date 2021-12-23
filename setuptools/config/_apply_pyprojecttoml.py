@@ -28,8 +28,8 @@ _Correspondence = Union[str, _CorrespFn]
 def apply(dist: "Distribution", config: dict, root_dir: _Path) -> "Distribution":
     """Apply configuration dict read with :func:`read_configuration`"""
 
-    tool_table = config.get("tool", {}).get("setuptools")
-    project_table = config.get("project").copy()
+    tool_table = config.get("tool", {}).get("setuptools", {})
+    project_table = config.get("project", {}).copy()
     _unify_entry_points(project_table)
     _dynamic_license(project_table, tool_table)
     for field, value in project_table.items():

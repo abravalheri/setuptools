@@ -53,12 +53,12 @@ def validate(config: dict, filepath: _Path):
         raise
 
 
-def apply_configuration(dist: "Distribution", filepath: _Path):
+def apply_configuration(dist: "Distribution", filepath: _Path) -> "Distribution":
     """Apply the configuration from a ``pyproject.toml`` file into an existing
     distribution object.
     """
     config = read_configuration(filepath)
-    return apply(dist, config, os.path.dirname(filepath))
+    return apply(dist, config, os.path.dirname(filepath) or ".")
 
 
 def read_configuration(filepath, expand=True, ignore_option_errors=False):
