@@ -25,9 +25,10 @@ _CorrespFn = Callable[["Distribution", Any, _Path], None]
 _Correspondence = Union[str, _CorrespFn]
 
 
-def apply(dist: "Distribution", config: dict, root_dir: _Path) -> "Distribution":
+def apply(dist: "Distribution", config: dict, filename: _Path) -> "Distribution":
     """Apply configuration dict read with :func:`read_configuration`"""
 
+    root_dir = os.path.dirname(filename) or "."
     tool_table = config.get("tool", {}).get("setuptools", {})
     project_table = config.get("project", {}).copy()
     _unify_entry_points(project_table)
@@ -45,7 +46,7 @@ def apply(dist: "Distribution", config: dict, root_dir: _Path) -> "Distribution"
         norm_key = TOOL_TABLE_RENAMES.get(norm_key, norm_key)
         _set_config(dist, norm_key, value)
 
-    _copy_command_options(config, dist)
+    _copy_command_options(config, dist, filename)
 
     current_directory = os.getcwd()
     os.chdir(root_dir)
@@ -158,7 +159,7 @@ def _unify_entry_points(project_table: dict):
         }
 
 
-def _copy_command_options(pyproject: dict, dist: "Distribution"):
+def _copy_command_options(pyproject: dict, dist: "Distribution", filename: _Path):
     from distutils import log
 
     tool_table = pyproject.get("tool", {})
@@ -172,7 +173,7 @@ def _copy_command_options(pyproject: dict, dist: "Distribution"):
         cmd_opts.setdefault(cmd, {})
         for key, value in config.items():
             key = json_compatible_key(key)
-            cmd_opts[cmd][key] = value
+            cmd_opts[cmd][key] = (str(filename), value)
             if key not in valid:
                 # To avoid removing options that are specified dynamically we
                 # just log a warn...
