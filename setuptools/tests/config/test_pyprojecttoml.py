@@ -1,4 +1,3 @@
-import os
 from configparser import ConfigParser
 
 from setuptools.config.pyprojecttoml import read_configuration, expand_configuration
