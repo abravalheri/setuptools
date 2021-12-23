@@ -4,11 +4,14 @@ import shutil
 import tarfile
 import warnings
 from concurrent import futures
+from zipfile import ZipFile
 
 import pytest
 from jaraco import path
 
 from .textwrap import DALS
+
+SETUP_SCRIPT_STUB = "__import__('setuptools').setup()"
 
 
 class BuildBackendBase:
@@ -58,7 +61,7 @@ class BuildBackendCaller(BuildBackendBase):
 
 
 defns = [
-    {
+    {  # simple setup.py script
         'setup.py': DALS("""
             __import__('setuptools').setup(
                 name='foo',
@@ -72,7 +75,7 @@ defns = [
                 print('hello')
             """),
     },
-    {
+    {  # setup.py that relies on __name__
         'setup.py': DALS("""
             assert __name__ == '__main__'
             __import__('setuptools').setup(
@@ -87,7 +90,7 @@ defns = [
                 print('hello')
             """),
     },
-    {
+    {  # setup.py script that runs arbitrary code
         'setup.py': DALS("""
             variable = True
             def function():
@@ -105,7 +108,7 @@ defns = [
                 print('hello')
             """),
     },
-    {
+    {  # setup.cfg only
         'setup.cfg': DALS("""
         [metadata]
         name = foo
@@ -120,11 +123,35 @@ defns = [
             print('hello')
         """)
     },
+    {  # setup.cfg and setup.py
+        'setup.cfg': DALS("""
+        [metadata]
+        name = foo
+        version = 0.0.0
+
+        [options]
+        py_modules=hello
+        setup_requires=six
+        """),
+        'setup.py': "__import__('setuptools').setup()",
+        'hello.py': DALS("""
+        def run():
+            print('hello')
+        """)
+    },
 ]
 
 
 class TestBuildMetaBackend:
     backend_name = 'setuptools.build_meta'
+
+    @pytest.fixture(autouse=True)
+    def ignore_known_warnings(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            warnings.filterwarnings("ignore", "__legacy__ backend conflicts")
+            warnings.filterwarnings("ignore", "'setup.cfg' is deprecated")
+            yield
 
     def get_build_backend(self):
         return BuildBackend(backend_name=self.backend_name)
@@ -132,9 +159,7 @@ class TestBuildMetaBackend:
     @pytest.fixture(params=defns)
     def build_backend(self, tmpdir, request):
         path.build(request.param, prefix=str(tmpdir))
-        with tmpdir.as_cwd(), warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            warnings.filterwarnings("ignore", "__legacy__ backend conflicts")
+        with tmpdir.as_cwd():
             yield self.get_build_backend()
 
     def test_get_requires_for_build_wheel(self, build_backend):
@@ -150,7 +175,9 @@ class TestBuildMetaBackend:
     def test_build_wheel(self, build_backend):
         dist_dir = os.path.abspath('pip-wheel')
         os.makedirs(dist_dir)
-        wheel_name = build_backend.build_wheel(dist_dir)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", ".*setup.cfg.* is deprecated")
+            wheel_name = build_backend.build_wheel(dist_dir)
 
         assert os.path.isfile(os.path.join(dist_dir, wheel_name))
 
@@ -200,6 +227,109 @@ class TestBuildMetaBackend:
         third_result = build_method(dist_dir)
         assert third_result == second_result
         assert os.path.getsize(os.path.join(dist_dir, third_result)) > 0
+
+    @pytest.mark.parametrize("setup_script", [None, SETUP_SCRIPT_STUB])
+    def test_build_with_pyproject_config(self, tmpdir, setup_script):
+        files = {
+            'pyproject.toml': DALS("""
+                [build-system]
+                requires = ["setuptools", "wheel"]
+                build-backend = "setuptools.build_meta"
+
+                [project]
+                name = "foo"
+                description = "This is a Python package"
+                dynamic = ["version", "license", "readme"]
+                classifiers = [
+                    "Development Status :: 5 - Production/Stable",
+                    "Intended Audience :: Developers"
+                ]
+                urls = {Homepage = "http://github.com"}
+                dependencies = [
+                    "appdirs",
+                ]
+
+                [project.optional-dependencies]
+                all = [
+                    "tomli>=1",
+                    "pyscaffold>=4,<5",
+                    'importlib; python_version == "2.6"',
+                ]
+
+                [project.scripts]
+                foo = "foo.cli:main"
+
+                [tool.setuptools]
+                package-dir = {"" = "src"}
+                packages = {find = {where = ["src"]}}
+
+                [tool.setuptools.dynamic]
+                version = {attr = "foo.__version__"}
+                license = "MIT"
+                license_files = ["LICENSE*"]
+                readme = {file = "README.rst"}
+
+                [tool.distutils.sdist]
+                formats = "gztar"
+
+                [tool.distutils.bdist_wheel]
+                universal = true
+                """),
+            "MANIFEST.in": DALS("""
+                global-include *.py *.txt
+                global-exclude *.py[cod]
+                """),
+            "README.rst": "This is a ``README``",
+            "LICENSE.txt": "---- placeholder MIT license ----",
+            "src": {
+                "foo": {
+                    "__init__.py": "__version__ = '0.1'",
+                    "cli.py": "def main(): print('hello world')",
+                    "data.txt": "def main(): print('hello world')",
+                }
+            }
+        }
+        if setup_script:
+            files["setup.py"] = setup_script
+
+        build_backend = self.get_build_backend()
+        with tmpdir.as_cwd():
+            path.build(files)
+            wheel_file = build_backend.build_wheel("temp")
+
+        with ZipFile(os.path.join(tmpdir, "temp", wheel_file)) as zipfile:
+            print(f"{zipfile.filename=}")
+            wheel_contents = set(zipfile.namelist())
+            from pprint import pprint
+            pprint(wheel_contents)
+            metadata = str(zipfile.read("foo-0.1.dist-info/METADATA"), "utf-8")
+            license = str(zipfile.read("foo-0.1.dist-info/LICENSE.txt"), "utf-8")
+            epoints = str(zipfile.read("foo-0.1.dist-info/entry_points.txt"), "utf-8")
+
+        assert wheel_contents == {
+            "foo/__init__.py",
+            "foo/cli.py",
+            "foo/data.txt",  # include_package_data defaults to True
+            "foo-0.1.dist-info/LICENSE.txt",
+            "foo-0.1.dist-info/METADATA",
+            "foo-0.1.dist-info/WHEEL",
+            "foo-0.1.dist-info/entry_points.txt",
+            "foo-0.1.dist-info/top_level.txt",
+            "foo-0.1.dist-info/RECORD",
+        }
+        assert license == "---- placeholder MIT license ----"
+        for line in (
+            "Summary: This is a Python package",
+            "License: MIT",
+            "Classifier: Intended Audience :: Developers",
+            "Requires-Dist: appdirs",
+            "Requires-Dist: tomli (>=1) ; extra == 'all'",
+            "Requires-Dist: importlib ; (python_version == \"2.6\") and extra == 'all'"
+        ):
+            assert line in metadata
+
+        assert metadata.strip().endswith("This is a ``README``")
+        assert epoints.strip() == "[console_scripts]\nfoo = foo.cli:main"
 
     def test_build_sdist(self, build_backend):
         dist_dir = os.path.abspath('pip-sdist')
@@ -482,3 +612,16 @@ class TestBuildMetaLegacyBackend(TestBuildMetaBackend):
 
         build_backend = self.get_build_backend()
         build_backend.build_sdist("temp")
+
+    @pytest.mark.parametrize("setup_script", [None, SETUP_SCRIPT_STUB])
+    def test_build_with_pyproject_config(self, tmpdir, setup_script):
+        if setup_script is None:
+            return super().test_build_with_pyproject_config(tmpdir, setup_script)
+
+        import setuptools
+
+        with pytest.raises(setuptools.SetuptoolsDeprecationWarning) as exc_info:
+            # Relies on the warning => error filter in pytest.ini
+            super().test_build_with_pyproject_config(tmpdir, setup_script)
+
+        assert "__legacy__ backend is incompatible" in str(exc_info.value)
