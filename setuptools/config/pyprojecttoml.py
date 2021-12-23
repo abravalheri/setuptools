@@ -58,7 +58,7 @@ def apply_configuration(dist: "Distribution", filepath: _Path) -> "Distribution"
     distribution object.
     """
     config = read_configuration(filepath)
-    return apply(dist, config, os.path.dirname(filepath) or ".")
+    return apply(dist, config, filepath)
 
 
 def read_configuration(filepath, expand=True, ignore_option_errors=False):
