@@ -42,8 +42,17 @@ def tmp_src(request, tmp_path):
     when they are not being executed sequentially.
     """
     tmp_src_path = tmp_path / 'src'
-    shutil.copytree(request.config.rootdir, tmp_src_path)
-    return tmp_src_path
+    tmp_src_path.mkdir(exist_ok=True, parents=True)
+    for item in Path(request.config.rootdir).glob("*"):
+        name = item.name
+        if str(name).startswith(".") or name in ("dist", "build", "docs"):
+            # Avoid copying unnecessary folders, specially the .git one
+            # that can contain lots of files and is error prone
+            continue
+        copy = shutil.copy2 if item.is_file() else shutil.copytree
+        copy(item, tmp_src_path / item.name)
+
+    yield tmp_src_path
 
 
 @pytest.fixture(autouse=True, scope="session")
