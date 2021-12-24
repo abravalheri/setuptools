@@ -1,12 +1,14 @@
-import glob
 import os
 import sys
 import itertools
+import subprocess
+from contextlib import contextmanager
 
 import pathlib
 
 import pytest
 from pytest_fixture_config import yield_requires_config
+from filelock import FileLock
 
 import pytest_virtualenv
 
@@ -30,23 +32,17 @@ def pytest_virtualenv_works(virtualenv):
 
 @yield_requires_config(pytest_virtualenv.CONFIG, ['virtualenv_executable'])
 @pytest.fixture(scope='function')
-def bare_virtualenv():
-    """ Bare virtualenv (no pip/setuptools/wheel).
-    """
-    with pytest_virtualenv.VirtualEnv(args=(
-        '--no-wheel',
-        '--no-pip',
-        '--no-setuptools',
-    )) as venv:
-        yield venv
+def venv_factory():
+    yield pytest_virtualenv.VirtualEnv
 
 
-def test_clean_env_install(bare_virtualenv, tmp_src):
+def test_clean_env_install(venv_factory, setuptools_wheel):
     """
     Check setuptools can be installed in a clean environment.
     """
-    cmd = [bare_virtualenv.python, 'setup.py', 'install']
-    bare_virtualenv.run(cmd, cd=tmp_src)
+    with venv_factory(args=('--no-wheel', '--no-setuptools')) as venv:
+        cmd = [venv.python, "-m", "pip", "install", setuptools_wheel]
+        venv.run(cmd)
 
 
 def _get_pip_versions():
@@ -99,7 +95,8 @@ def _get_pip_versions():
     reason="https://github.com/pypa/setuptools/pull/2865#issuecomment-965834995",
 )
 @pytest.mark.parametrize('pip_version', _get_pip_versions())
-def test_pip_upgrade_from_source(pip_version, tmp_src, virtualenv):
+def test_pip_upgrade_from_source(pip_version, virtualenv,
+                                 setuptools_sdist, setuptools_wheel):
     """
     Check pip can upgrade setuptools from source.
     """
@@ -111,28 +108,20 @@ def test_pip_upgrade_from_source(pip_version, tmp_src, virtualenv):
         upgrade_pip = ('python -m pip install -U "{pip_version}" --retries=1',)
     virtualenv.run(' && '.join((
         'pip uninstall -y setuptools',
-        'pip install -U wheel',
+        'pip install -U build[virtualenv]',
     ) + upgrade_pip).format(pip_version=pip_version))
-    dist_dir = virtualenv.workspace
-    # Generate source distribution / wheel.
-    virtualenv.run(' && '.join((
-        'python setup.py -q sdist -d {dist}',
-        'python setup.py -q bdist_wheel -d {dist}',
-    )).format(dist=dist_dir), cd=tmp_src)
-    sdist = glob.glob(os.path.join(dist_dir, '*.zip'))[0]
-    wheel = glob.glob(os.path.join(dist_dir, '*.whl'))[0]
     # Then update from wheel.
-    virtualenv.run('pip install ' + wheel)
+    virtualenv.run(['pip', 'install', setuptools_wheel])
     # And finally try to upgrade from source.
-    virtualenv.run('pip install --no-cache-dir --upgrade ' + sdist)
+    virtualenv.run(['pip', 'install', '--no-cache-dir', '--upgrade', setuptools_sdist])
 
 
-def _check_test_command_install_requirements(virtualenv, tmpdir, cwd):
+def _check_test_command_install_requirements(virtualenv, tmpdir, setuptools_wheel):
     """
     Check the test command will install all required dependencies.
     """
     # Install setuptools.
-    virtualenv.run('python setup.py develop', cd=cwd)
+    virtualenv.run(['pip', 'install', setuptools_wheel])
 
     def sdist(distname, version):
         dist_path = tmpdir.join('%s-%s.tar.gz' % (distname, version))
@@ -189,7 +178,7 @@ def _check_test_command_install_requirements(virtualenv, tmpdir, cwd):
     assert tmpdir.join('success').check()
 
 
-def test_test_command_install_requirements(virtualenv, tmpdir, request):
+def test_test_command_install_requirements(virtualenv, tmpdir, setuptools_wheel):
     # Ensure pip/wheel packages are installed.
     virtualenv.run(
         "python -c \"__import__('pkg_resources').require(['pip', 'wheel'])\"")
@@ -197,13 +186,14 @@ def test_test_command_install_requirements(virtualenv, tmpdir, request):
     virtualenv.run("python -m pip uninstall -y setuptools")
     # disable index URL so bits and bobs aren't requested from PyPI
     virtualenv.env['PIP_NO_INDEX'] = '1'
-    _check_test_command_install_requirements(virtualenv, tmpdir, request.config.rootdir)
+    _check_test_command_install_requirements(virtualenv, tmpdir, setuptools_wheel)
 
 
-def test_no_missing_dependencies(bare_virtualenv, request):
+def test_no_missing_dependencies(venv_factory, request):
     """
     Quick and dirty test to ensure all external dependencies are vendored.
     """
-    for command in ('upload',):  # sorted(distutils.command.__all__):
-        cmd = [bare_virtualenv.python, 'setup.py', command, '-h']
-        bare_virtualenv.run(cmd, cd=request.config.rootdir)
+    with venv_factory(args=('--no-wheel', '--no-pip', '--no-setuptools')) as venv:
+        for command in ('upload',):  # sorted(distutils.command.__all__):
+            cmd = [venv.python, 'setup.py', command, '-h']
+            venv.run(cmd, cd=request.config.rootdir)
