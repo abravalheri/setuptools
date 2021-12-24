@@ -2,8 +2,10 @@ import contextlib
 import sys
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
+import jaraco.path
 
 from . import contexts
 
@@ -72,3 +74,35 @@ def sample_project(tmp_path):
     except Exception:
         pytest.skip("Unable to clone sampleproject")
     return tmp_path / 'sampleproject'
+
+
+# sdist and wheel artifacts should be stable across a round of tests
+# so we can build them once per session and use the files as "readonly"
+
+
+@pytest.fixture(scope="session")
+def setuptools_sdist(tmp_path_factory, request):
+    with contexts.session_locked_tmp_dir(tmp_path_factory, "sdist_build") as tmp:
+        dist = next(tmp.glob("*.tar.gz"), None)
+        if dist:
+            return dist
+
+        subprocess.check_call([
+            sys.executable, "-m", "build", "--sdist",
+            "--outdir", str(tmp), request.config.rootdir
+        ])
+        return next(tmp.glob("*.tar.gz"))
+
+
+@pytest.fixture(scope="session")
+def setuptools_wheel(tmp_path_factory, request):
+    with contexts.session_locked_tmp_dir(tmp_path_factory, "wheel_build") as tmp:
+        dist = next(tmp.glob("*.whl"), None)
+        if dist:
+            return dist
+
+        subprocess.check_call([
+            sys.executable, "-m", "build", "--wheel",
+            "--outdir", str(tmp) , request.config.rootdir
+        ])
+        return next(tmp.glob("*.whl"))

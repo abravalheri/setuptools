@@ -42,6 +42,13 @@ class develop(namespaces.DevelopInstaller, easy_install):
         self.always_copy_from = '.'  # always copy eggs installed in curdir
 
     def finalize_options(self):
+        # Workaround while PEP 660 is not implemented
+        project_root = self.distribution.src_root or "."
+        config = os.path.join(project_root, "pyproject.toml")
+        if os.path.exists(config):
+            from setuptools.config import pyprojecttoml
+            pyprojecttoml.apply_configuration(self.distribution, config)
+
         ei = self.get_finalized_command("egg_info")
         if ei.broken_egg_info:
             template = "Please rename %r to %r before using 'develop'"
