@@ -51,6 +51,13 @@ __all__ = ['get_requires_for_build_sdist',
 SETUP_SCRIPT = "setup.py"
 CONFIG_FILE = "pyproject.toml"
 LEGACY_CONFIG_FILE = "setup.cfg"
+SAFE_SCRIPT_NAME = "%%setuptools.build_meta%%"
+# ^-- distutils.sdist:sdist._add_defaults_standards will try to add `script_name`
+#     to the list of files to include in the distribution.
+#     If the SETUP_SCRIPT does not exist, the best is to use some made-up name
+#     that is unlikely to exist as a file.
+#     If we use `sys.argv[0]` setuptools might try to add things like
+#     `.tox/python/bin/pytest` to the tar.gz (and this will result in an error)
 
 
 @contextlib.contextmanager
@@ -143,8 +150,11 @@ class _BuildMetaBackend(object):
         if os.path.exists(SETUP_SCRIPT) and os.stat(SETUP_SCRIPT).st_size > 0:
             with no_install_setup_requires(), _patch_distutils_core():
                 dist = distutils.core.run_setup(SETUP_SCRIPT, stop_after="init")
+                dist.script_name = SETUP_SCRIPT
+                # ^-- preserve _add_defaults_standards behaviour
         else:
             dist = setuptools.dist.Distribution()
+            dist.script_name = SAFE_SCRIPT_NAME
 
         if os.path.exists(LEGACY_CONFIG_FILE):
             msg = f"The usage of {LEGACY_CONFIG_FILE!r} is deprecated, "
@@ -173,7 +183,6 @@ class _BuildMetaBackend(object):
         # Note that we can reuse our build directory between calls
         # Correctness comes first, then optimization later
         dist = self._get_dist()
-        dist.script_name = sys.argv[0]
         dist.script_args = args
         dist.parse_command_line()
 
