@@ -298,7 +298,6 @@ class TestBuildMetaBackend:
             wheel_file = build_backend.build_wheel("temp")
 
         with ZipFile(os.path.join(tmpdir, "temp", wheel_file)) as zipfile:
-            print(f"{zipfile.filename=}")
             wheel_contents = set(zipfile.namelist())
             from pprint import pprint
             pprint(wheel_contents)
