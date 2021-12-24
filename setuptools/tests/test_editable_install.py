@@ -48,8 +48,7 @@ EXAMPLE = {
         readme = {file = "README.rst"}
 
         [tool.distutils.egg_info]
-        tag-build = ".post"
-        tag-date = 1
+        tag-build = ".post0"
         """),
     "MANIFEST.in": dedent("""\
         global-include *.py *.txt
@@ -97,12 +96,14 @@ def test_editable_with_pyproject(tmp_path, venv, setup_script):
     project.mkdir()
     jaraco.path.build(files, prefix=project)
 
-    cmd = [venv.exe(), "-m", "pip", "install", "-e", str(project)]
+    cmd = [venv.exe(), "-m", "pip", "install",
+           "--no-build-isolation",  # required to force current version of setuptools
+           "-e", str(project)]
     print(str(subprocess.check_output(cmd), "utf-8"))
 
     cmd = [venv.exe(), "-m", "mypkg"]
-    assert subprocess.check_output(cmd).strip() == "v3.14159 Hello World"
+    assert subprocess.check_output(cmd).strip() == b"3.14159.post0 Hello World"
 
     (project / "src/mypkg/data.txt").write_text("foobar")
     (project / "src/mypkg/mod.py").write_text("x = 42")
-    assert subprocess.check_output(cmd).strip() == "v3.14159 foobar 42"
+    assert subprocess.check_output(cmd).strip() == b"3.14159.post0 foobar 42"
