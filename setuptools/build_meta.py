@@ -144,6 +144,18 @@ class _BuildMetaBackend(object):
         config_settings.setdefault('--global-option', [])
         return config_settings
 
+    def _advise_deprecations(self):
+        if os.path.exists(LEGACY_CONFIG_FILE):
+            msg = f"""
+            The usage of {LEGACY_CONFIG_FILE!r} is deprecated,
+            please adopt pyproject.toml for configuration.
+            Automation tools like `ini2toml` can help you in this process.
+            """
+            # For the time being let's use a PendingDeprecationWarning
+            # which should be replaced with a DeprecationWarning once the
+            # pyproject.toml interface is tested in the wild
+            warnings.warn(msg, PendingDeprecationWarning)
+
     def _get_dist(self):
         """Retrieve a distribution object already configured."""
 
@@ -156,6 +168,7 @@ class _BuildMetaBackend(object):
             dist = setuptools.dist.Distribution()
             dist.script_name = SAFE_SCRIPT_NAME
 
+        self._advise_deprecations()
         dist.parse_config_files()
         dist.finalize_options()
         return dist
@@ -263,6 +276,9 @@ class _BuildMetaLegacyBackend(_BuildMetaBackend):
     packaging mechanism,
     and will eventually be removed.
     """
+
+    def _advise_deprecations(self):
+        """Deprecation warnings for the legacy backend are less prominent"""
 
     def run_command(self, *args):
         # In order to maintain compatibility with scripts assuming that
