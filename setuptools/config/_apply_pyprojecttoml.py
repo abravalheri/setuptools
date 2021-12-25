@@ -11,18 +11,19 @@ from email.headerregistry import Address
 from functools import partial
 from itertools import chain
 from types import MappingProxyType
-from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple,
-                    Type, Union)
+from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Optional,
+                    Set, Tuple, Type, Union, cast)
 
 if TYPE_CHECKING:
     from pkg_resources import EntryPoint  # noqa
     from setuptools.dist import Distribution  # noqa
 
-EMPTY = MappingProxyType({})  # Immutable dict-like
+EMPTY: Mapping = MappingProxyType({})  # Immutable dict-like
 _Path = Union[os.PathLike, str]
 _DictOrStr = Union[dict, str]
 _CorrespFn = Callable[["Distribution", Any, _Path], None]
 _Correspondence = Union[str, _CorrespFn]
+_IterEntryPoints = Callable[[str], List["EntryPoint"]]
 
 
 def apply(dist: "Distribution", config: dict, filename: _Path) -> "Distribution":
@@ -186,8 +187,9 @@ def _valid_command_options(cmdclass: Mapping = EMPTY) -> Dict[str, Set[str]]:
 
     valid_options = {"global": _normalise_cmd_options(Distribution.global_options)}
 
-    entry_points = (_load_ep(ep) for ep in iter_entry_points('distutils.commands'))
-    entry_points = (ep for ep in entry_points if ep)
+    iter_ep = cast(_IterEntryPoints, iter_entry_points)
+    _entry_points = (_load_ep(ep) for ep in iter_ep('distutils.commands'))
+    entry_points = (ep for ep in _entry_points if ep)
     for cmd, cmd_class in chain(entry_points, cmdclass.items()):
         opts = valid_options.get(cmd, set())
         opts = opts | _normalise_cmd_options(getattr(cmd_class, "user_options", []))
