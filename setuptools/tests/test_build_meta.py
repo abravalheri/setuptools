@@ -2,6 +2,7 @@ import importlib
 import os
 import shutil
 import tarfile
+import traceback
 import warnings
 from concurrent import futures
 from zipfile import ZipFile
@@ -11,6 +12,7 @@ from jaraco import path
 
 from .textwrap import DALS
 
+MAX_ATTEMPTS = 5
 SETUP_SCRIPT_STUB = "__import__('setuptools').setup()"
 
 
@@ -34,7 +36,20 @@ class BuildBackend(BuildBackendBase):
         def method(*args, **kw):
             root = os.path.abspath(self.cwd)
             caller = BuildBackendCaller(root, self.env, self.backend_name)
-            return self.pool.submit(caller, name, *args, **kw).result()
+            for attempt in range(MAX_ATTEMPTS):
+                try:
+                    return self.pool.submit(caller, name, *args, **kw).result()
+                except futures.process.BrokenProcessPool as ex:
+                    # Attempt to prevent eventual memory allocation failures.
+                    # Sometimes the following can be observed in the CI logs for PyPy:
+                    #   RPython traceback: ...
+                    #   out of memory: couldn't allocate the next arena
+                    tb = "\n".join(traceback.format_tb(ex.__traceback__, limit=None))
+                    if "couldn't allocate" not in tb and attempt < MAX_ATTEMPTS - 1:
+                        self.pool = futures.ProcessPoolExecutor(max_workers=1)
+                        __import__("gc").collect()
+                        continue
+                    raise
 
         return method
 
