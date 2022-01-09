@@ -6,9 +6,9 @@ max-complexity = 10
 
 extend-exclude =
 	build
-	setuptools/_vendor
-	setuptools/_distutils
-	pkg_resources/_vendor
+	src/setuptools/_vendor
+	src/setuptools/_distutils
+	src/pkg_resources/_vendor
 
 extend-ignore =
 	# Black creates whitespace before colon

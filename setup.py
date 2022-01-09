@@ -4,10 +4,15 @@ import os
 import sys
 import textwrap
 
-import setuptools
-from setuptools.command.install import install
-
 here = os.path.dirname(__file__)
+
+try:
+    sys_path = sys.path[:]
+    sys.path.append(os.path.join(here, "src"))
+    import setuptools
+    from setuptools.command.install import install
+finally:
+    sys.path = sys_path
 
 
 package_data = dict(

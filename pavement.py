@@ -91,12 +91,12 @@ def _find_license_dest(license_file, vendor):
 
 
 def update_pkg_resources():
-    vendor = Path('pkg_resources/_vendor')
+    vendor = Path('src/pkg_resources/_vendor')
     install(vendor)
     rewrite_packaging(vendor / 'packaging', 'pkg_resources.extern')
 
 
 def update_setuptools():
-    vendor = Path('setuptools/_vendor')
+    vendor = Path('src/setuptools/_vendor')
     install(vendor)
     rewrite_packaging(vendor / 'packaging', 'setuptools.extern')

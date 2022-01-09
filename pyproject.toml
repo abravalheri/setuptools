@@ -1,7 +1,7 @@
 [build-system]
 requires = []
 build-backend = "setuptools.build_meta"
-backend-path = ["."]
+backend-path = ["src"]
 
 [tool.black]
 skip-string-normalization = true
