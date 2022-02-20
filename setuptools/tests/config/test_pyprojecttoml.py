@@ -41,7 +41,6 @@ platforms = ["any"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-namespaces = true
 
 [tool.setuptools.cmdclass]
 sdist = "pkg.mod.CustomSdist"
@@ -72,7 +71,7 @@ def test_read_configuration(tmp_path):
 
     files = [
         "src/pkg/__init__.py",
-        "src/other/nested/__init__.py",
+        "src/other/nested/__init__.py",  # ensure namespaces are discovered by default
         "files/file.txt"
     ]
     for file in files:
