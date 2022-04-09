@@ -15,6 +15,7 @@ import re
 import shutil
 import sys
 import warnings
+from itertools import chain
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, Iterable, Iterator, List, Mapping, Set, Union
@@ -161,8 +162,8 @@ class _TopLevelFinder:
 
     def __call__(self, unpacked_wheel_dir: Path):
         src_root = self.dist.src_root or os.curdir
+        packages = chain(_find_packages(self.dist), _find_top_level_modules(self.dist))
         package_dir = self.dist.package_dir or {}
-        packages = _find_packages(self.dist)
         pkg_roots = _find_pkg_roots(packages, package_dir, src_root)
         namespaces_ = set(_find_mapped_namespaces(pkg_roots))
 
@@ -238,6 +239,15 @@ def _find_packages(dist: Distribution) -> Iterator[str]:
     for module in nested_modules:
         package, _, _ = module.rpartition(".")
         yield package
+
+
+def _find_top_level_modules(dist: Distribution) -> Iterator[str]:
+    py_modules = dist.py_modules or []
+    yield from (mod for mod in py_modules if "." not in mod)
+
+    if not dist.ext_package:
+        ext_modules = dist.ext_modules or []
+        yield from (x for x in ext_modules if "." not in x.name)
 
 
 def _find_pkg_roots(
