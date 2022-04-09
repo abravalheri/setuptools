@@ -86,8 +86,8 @@ class editable_wheel(Command):
             "For more information, search for 'namespace packages' in setuptools docs."
         )
         warnings.warn(msg, SetuptoolsDeprecationWarning)
-        target = Path(self.project_dir, self.pakcage_dir.get("", ".")).resolve()
-        installer = _NamespaceInstaller(dist, installation_dir, pth_prefix, target)
+        src_root = Path(self.project_dir, self.pakcage_dir.get("", ".")).resolve()
+        installer = _NamespaceInstaller(dist, installation_dir, pth_prefix, src_root)
         installer.install_namespaces()
 
     def _create_wheel_file(self, bdist_wheel):
