@@ -14,7 +14,6 @@ import os
 import re
 import shutil
 import sys
-import warnings
 import logging
 from itertools import chain
 from pathlib import Path
@@ -22,7 +21,6 @@ from tempfile import TemporaryDirectory
 from typing import Dict, Iterable, Iterator, List, Mapping, Set, Union, TypeVar
 
 from setuptools import Command, namespaces
-from setuptools._deprecation_warning import SetuptoolsDeprecationWarning
 from setuptools.discovery import find_package_path
 from setuptools.dist import Distribution
 
@@ -38,12 +36,6 @@ New or renamed files may not be automatically picked up without a new installati
 _LAX_WARNING = """
 Options like `package-data`, `include/exclude-package-data` or
 `packages.find.exclude/include` may have no effect.
-"""
-
-_NAMESPACE_WARNING = """
-`namespace_packages` are deprecated in favour of implicit namespaces
-(as specified in PEP 420).
-For more information, search for 'namespace packages' in setuptools docs.
 """
 
 
@@ -94,11 +86,11 @@ class editable_wheel(Command):
             assert Path(self.dist_info_dir, "METADATA").exists()
 
     def _install_namespaces(self, installation_dir, pth_prefix):
+        # XXX: Only required to support the deprecated namespace practice
         dist = self.distribution
         if not dist.namespace_packages:
             return
 
-        warnings.warn(_NAMESPACE_WARNING, SetuptoolsDeprecationWarning)
         src_root = Path(self.project_dir, self.pakcage_dir.get("", ".")).resolve()
         installer = _NamespaceInstaller(dist, installation_dir, pth_prefix, src_root)
         installer.install_namespaces()
