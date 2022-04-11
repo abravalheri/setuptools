@@ -55,6 +55,7 @@ class editable_wheel(Command):
     user_options = [
         ("dist-dir=", "d", "directory to put final built distributions in"),
         ("dist-info-dir=", "I", "path to a pre-build .dist-info directory"),
+        ("strict", None, "perform an strict installation"),
     ]
 
     boolean_options = ["strict"]
@@ -219,6 +220,9 @@ class _LinkTree(_StaticPth):
         self.tmp = tmp
 
     def _build_py(self):
+        if not self.dist.has_pure_modules():
+            return
+
         build_py = self.dist.get_command_obj("build_py")
         build_py.ensure_finalized()
         # Force build_py to use links instead of copying files
@@ -226,6 +230,9 @@ class _LinkTree(_StaticPth):
         build_py.run()
 
     def _build_ext(self):
+        if self.dist.has_ext_modules():
+            return
+
         build_ext = self.dist.get_command_obj("build_ext")
         build_ext.ensure_finalized()
         # Extensions are not editable, so we just have to build them in the right dir
@@ -264,6 +271,11 @@ def _configure_build(name: str, dist: Distribution, target_dir: _Path, tmp_dir: 
     data = str(Path(target_dir, f"{name}.data", "data"))
     headers = str(Path(target_dir, f"{name}.data", "include"))
     scripts = str(Path(target_dir, f"{name}.data", "scripts"))
+
+    # egg-info will be generated again to create a manifest (used for package data)
+    egg_info = dist.reinitialize_command("egg_info", reinit_subcommands=True)
+    egg_info.egg_base = str(tmp_dir)
+    egg_info.ignore_egg_info_in_manifest = True
 
     build = dist.reinitialize_command("build", reinit_subcommands=True)
     install = dist.reinitialize_command("install", reinit_subcommands=True)
