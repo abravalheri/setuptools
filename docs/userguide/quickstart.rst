@@ -131,7 +131,7 @@ the packages in your project directory:
         [options]
         packages = find: # OR `find_namespaces:` if you want to use namespaces
 
-        [options.packages.find] (always `find` even if `find_namespaces:` was used before)
+        [options.packages.find] # (always `find` even if `find_namespaces:` was used before)
         # This section is optional
         # Each entry in this section is optional, and if not specified, the default values are:
         # `where=.`, `include=*` and `exclude=` (empty).
@@ -410,5 +410,5 @@ up-to-date references that can help you when it is time to distribute your work.
    While the ``[build-system]`` table should always be specified in the
    ``pyproject.toml`` file, support for adding package metadata and build configuration
    options via the ``[project]`` and ``[tool.setuptools]`` tables is still
-   experimental and might change (or be completely removed) in future releases.
+   experimental and might change in future releases.
    See :doc:`/userguide/pyproject_config`.
