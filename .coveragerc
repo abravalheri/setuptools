@@ -2,6 +2,7 @@
 source =
 	setuptools
 	pkg_resources
+	_distutils_hack
 omit =
 	# leading `*/` for pytest-dev/pytest-cov#456
 	*/_vendor/*
