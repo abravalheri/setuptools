@@ -98,7 +98,9 @@ authors = [
   {name = "Tzu-Ping Chung"}
 ]
 maintainers = [
-  {name = "Brett Cannon", email = "brett@python.org"}
+  {name = "Brett Cannon", email = "brett@python.org"},
+  {name = "John X. Ãørçeč", email = "john@utf8.org"},
+  {name = "Γαμα קּ 東", email = "gama@utf8.org"},
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -134,6 +136,19 @@ spam-gui = "spam:main_gui"
 tomatoes = "spam:main_tomatoes"
 """
 
+PEP621_INTERNATIONAL_EMAIL_EXAMPLE = """\
+[project]
+name = "spam"
+version = "2020.0.0"
+authors = [
+  {email = "hi@pradyunsg.me"},
+  {name = "Tzu-Ping Chung"}
+]
+maintainers = [
+  {name = "Степан Бандера", email = "криївка@оун-упа.укр"},
+]
+"""
+
 PEP621_EXAMPLE_SCRIPT = """
 def main_cli(): pass
 def main_gui(): pass
@@ -141,13 +156,17 @@ def main_tomatoes(): pass
 """
 
 
-def _pep621_example_project(tmp_path, readme="README.rst"):
+def _pep621_example_project(
+        tmp_path,
+        readme="README.rst",
+        pyproject_text=PEP621_EXAMPLE,
+):
     pyproject = tmp_path / "pyproject.toml"
-    text = PEP621_EXAMPLE
+    text = pyproject_text
     replacements = {'readme = "README.rst"': f'readme = "{readme}"'}
     for orig, subst in replacements.items():
         text = text.replace(orig, subst)
-    pyproject.write_text(text)
+    pyproject.write_text(text, encoding="utf-8")
 
     (tmp_path / readme).write_text("hello world")
     (tmp_path / "LICENSE.txt").write_text("--- LICENSE stub ---")
@@ -187,6 +206,45 @@ def test_no_explicit_content_type_for_missing_extension(tmp_path):
     pyproject = _pep621_example_project(tmp_path, "README")
     dist = pyprojecttoml.apply_configuration(makedist(tmp_path), pyproject)
     assert dist.metadata.long_description_content_type is None
+
+
+@pytest.mark.parametrize(
+    ('pyproject_text', 'expected_maintainers_meta_value'),
+    (
+        pytest.param(
+            PEP621_EXAMPLE,
+            (
+                'Brett Cannon <brett@python.org>, "John X. Ãørçeč" <john@utf8.org>, '
+                'Γαμα קּ 東 <gama@utf8.org>'
+            ),
+            id='non-international-emails',
+        ),
+        pytest.param(
+            PEP621_INTERNATIONAL_EMAIL_EXAMPLE,
+            'Степан Бандера <криївка@оун-упа.укр>',
+            marks=pytest.mark.xfail(
+                reason="CPython's `email.headerregistry.Address` only supports "
+                'RFC 5322, as of Nov 10, 2022 and latest Python 3.11.0',
+                strict=True,
+            ),
+            id='international-email',
+        ),
+    ),
+)
+def test_utf8_maintainer_in_metadata(  # issue-3663
+        expected_maintainers_meta_value,
+        pyproject_text, tmp_path,
+):
+    pyproject = _pep621_example_project(
+        tmp_path, "README", pyproject_text=pyproject_text,
+    )
+    dist = pyprojecttoml.apply_configuration(makedist(tmp_path), pyproject)
+    assert dist.metadata.maintainer_email == expected_maintainers_meta_value
+    pkg_file = tmp_path / "PKG-FILE"
+    with open(pkg_file, "w", encoding="utf-8") as fh:
+        dist.metadata.write_pkg_file(fh)
+    content = pkg_file.read_text(encoding="utf-8")
+    assert f"Maintainer-email: {expected_maintainers_meta_value}" in content
 
 
 # TODO: After PEP 639 is accepted, we have to move the license-files

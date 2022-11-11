@@ -5,7 +5,7 @@ When creating a Python project, developers usually want to implement and test
 changes iteratively, before cutting a release and preparing a distribution archive.
 
 In normal circumstances this can be quite cumbersome and require the developers
-to manipulate the ``PYTHONPATH`` environment variable or to continuous re-build
+to manipulate the ``PYTHONPATH`` environment variable or to continuously re-build
 and re-install the project.
 
 To facilitate iterative exploration and experimentation, setuptools allows
@@ -247,7 +247,7 @@ More information is available on the text of :pep:`PEP 660 <660#what-to-put-in-t
 .. [#cwd]
    Techniques like the :ref:`src-layout` or tooling-specific options like
    `tox's changedir <https://tox.wiki/en/stable/config.html#conf-changedir>`_
-   can be used to prevent such kinds of situations (chekout `this blog post
+   can be used to prevent such kinds of situations (checkout `this blog post
    <https://blog.ganssle.io/articles/2019/08/test-as-installed.html>`_ for more
    insights).
 
