@@ -1,3 +1,32 @@
+v65.6.1
+-------
+
+
+Documentation changes
+^^^^^^^^^^^^^^^^^^^^^
+* #3689: Documented that ``distutils.cfg`` might be ignored unless
+  ``SETUPTOOLS_USE_DISTUTILS=stdlib``.
+
+Misc
+^^^^
+* #3678: Improve clib builds reproducibility by sorting sources -- by :user:`danigm`
+* #3684: Improved exception/traceback when invalid entry-points are specified.
+* #3690: Fixed logging errors: 'underlying buffer has been detached' (issue #1631).
+* #3693: Merge pypa/distutils@3e9d47e with compatibility fix for distutils.log.Log.
+* #3695, #3697, #3698, #3699: Changed minor text details (spelling, spaces ...)
+* #3696: Removed unnecessary ``coding: utf-8`` annotations
+* #3704: Fixed temporary build directories interference with auto-discovery.
+
+
+v65.6.0
+-------
+
+
+Changes
+^^^^^^^
+* #3674: Sync with pypa/distutils@e0787fa, including pypa/distutils#183 updating distutils to use the Python logging framework.
+
+
 v65.5.1
 -------
 

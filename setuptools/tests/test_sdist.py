@@ -28,11 +28,14 @@ SETUP_ATTRS = {
     'data_files': [("data", [os.path.join("d", "e.dat")])],
 }
 
-SETUP_PY = """\
+SETUP_PY = (
+    """\
 from setuptools import setup
 
 setup(**%r)
-""" % SETUP_ATTRS
+"""
+    % SETUP_ATTRS
+)
 
 
 @contextlib.contextmanager
@@ -83,6 +86,12 @@ def latin1_fail():
 fail_on_latin1_encoded_filenames = pytest.mark.xfail(
     latin1_fail(),
     reason="System does not support latin-1 filenames",
+)
+
+
+skip_under_xdist = pytest.mark.skipif(
+    "os.environ.get('PYTEST_XDIST_WORKER')",
+    reason="pytest-dev/pytest-xdist#843",
 )
 
 
@@ -319,6 +328,7 @@ class TestSdistTest:
         # The filelist should have been updated as well
         assert u_filename in mm.filelist.files
 
+    @skip_under_xdist
     def test_write_manifest_skips_non_utf8_filenames(self):
         """
         Files that cannot be encoded to UTF-8 (specifically, those that
@@ -451,13 +461,13 @@ class TestSdistTest:
     @classmethod
     def make_strings(cls, item):
         if isinstance(item, dict):
-            return {
-                key: cls.make_strings(value) for key, value in item.items()}
+            return {key: cls.make_strings(value) for key, value in item.items()}
         if isinstance(item, list):
             return list(map(cls.make_strings, item))
         return str(item)
 
     @fail_on_latin1_encoded_filenames
+    @skip_under_xdist
     def test_sdist_with_latin1_encoded_filename(self):
         # Test for #303.
         dist = Distribution(self.make_strings(SETUP_ATTRS))
@@ -570,9 +580,11 @@ def test_default_revctrl():
     This interface must be maintained until Ubuntu 12.04 is no longer
     supported (by Setuptools).
     """
-    ep, = metadata.EntryPoints._from_text("""
+    (ep,) = metadata.EntryPoints._from_text(
+        """
         [setuptools.file_finders]
         svn_cvs = setuptools.command.sdist:_default_revctrl
-        """)
+        """
+    )
     res = ep.load()
     assert hasattr(res, '__iter__')
