@@ -14,8 +14,6 @@ omit =
 source =
 	.
 	*/site-packages
-	# Windows
-	*\site-packages
 
 [report]
 show_missing = True
