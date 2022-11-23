@@ -17,6 +17,7 @@ import sys
 from enum import Enum
 from glob import glob
 from hashlib import md5
+from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
@@ -82,6 +83,9 @@ INSTALL_OPTIONS = (
 # dependencies. The test script will have to also handle that.
 
 
+SITE_DISCOVERY_CMD = r"import site; print('\n'.join(site.getsitepackages()))"
+
+
 @pytest.fixture
 def venv_python(tmp_path):
     run([*VIRTUALENV, str(tmp_path / ".venv")])
@@ -108,12 +112,38 @@ def _prepare(tmp_path, venv_python, monkeypatch, request):
     request.addfinalizer(_debug_info)
 
 
+@pytest.fixture
+def prepare_coverage(venv_python, monkeypatch, pytestconfig):
+    # Delay fixture to until coverage it is installed
+    def _prepare():
+        root = Path(os.getenv("PROJECT_ROOT") or pytestconfig.invocation_dir)
+        venv_root = str(Path(venv_python).parent.parent.resolve())
+        candidates = (
+            Path(c).resolve()
+            for c in str(run([venv_python, "-c", SITE_DISCOVERY_CMD])).strip().split()
+        )
+        site_dir = next(c for c in candidates if c.exists() and venv_root in str(c))
+        autostart = "import coverage; coverage.process_startup()"
+        Path(site_dir, "_start_coverage.pth").write_text(autostart, encoding="utf-8")
+        monkeypatch.setenv("COVERAGE_PROCESS_START", str(root / ".coveragerc"))
+        monkeypatch.setenv("COVERAGE_RCFILE", str(root / ".coveragerc"))
+
+    return _prepare
+
+
 ALREADY_LOADED = ("pytest", "mypy")  # loaded by pytest/pytest-enabler
 
 
 @pytest.mark.parametrize('package, version', EXAMPLES)
 @pytest.mark.uses_network
-def test_install_sdist(package, version, tmp_path, venv_python, setuptools_wheel):
+def test_install_sdist(
+    package,
+    version,
+    tmp_path,
+    venv_python,
+    setuptools_wheel,
+    prepare_coverage,
+):
     venv_pip = (venv_python, "-m", "pip")
     sdist = retrieve_sdist(package, version, tmp_path)
     deps = build_deps(package, sdist)
@@ -124,7 +154,8 @@ def test_install_sdist(package, version, tmp_path, venv_python, setuptools_wheel
 
     # Use a virtualenv to simulate PEP 517 isolation
     # but install fresh setuptools wheel to ensure the version under development
-    run([*venv_pip, "install", "-I", setuptools_wheel])
+    run([*venv_pip, "install", "coverage", "-I", setuptools_wheel])
+    prepare_coverage()
     run([*venv_pip, "install", *INSTALL_OPTIONS, sdist])
 
     # Execute a simple script to make sure the package was installed correctly
