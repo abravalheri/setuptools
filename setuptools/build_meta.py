@@ -312,17 +312,19 @@ class _ConfigSettingsTranslator:
 
 class _BuildMetaBackend(_ConfigSettingsTranslator):
     def _get_build_requires(self, config_settings, requirements):
-        sys.argv = [
-            *sys.argv[:1],
-            *self._global_args(config_settings),
-            "egg_info",
-            *self._arbitrary_args(config_settings),
-        ]
-        try:
-            with Distribution.patch():
-                self.run_setup()
-        except SetupRequirementsError as e:
-            requirements += e.specifiers
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.argv = [
+                *sys.argv[:1],
+                *self._global_args(config_settings),
+                "egg_info",
+                "--egg-base", tmp,
+                *self._arbitrary_args(config_settings),
+            ]
+            try:
+                with Distribution.patch():
+                    self.run_setup()
+            except SetupRequirementsError as e:
+                requirements += e.specifiers
 
         return requirements
 
