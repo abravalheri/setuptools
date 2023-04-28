@@ -286,6 +286,15 @@ class Distribution(_Distribution):
         '_normalized_extras_require': dict,    # Dict[str, Dict[str, Requirement]]
     }
 
+    _DISTUTILS_UNSUPPORTED_KEYWORDS = {
+        "include_package_data": lambda: assert_bool,
+        "install_requires": lambda: check_requirements,
+        "extras_require": lambda: check_extras,
+        "entry_points": lambda: check_entry_points,
+        "exclude_package_data": lambda: check_package_data,
+        "namespace_packages": lambda: check_nsp,
+    }
+
     _patched_dist = None
 
     def patch_missing_pkg_info(self, attrs):
@@ -313,8 +322,8 @@ class Distribution(_Distribution):
         self.patch_missing_pkg_info(attrs)
         self.dependency_links = attrs.pop('dependency_links', [])
         self.setup_requires = attrs.pop('setup_requires', [])
-        for ep in metadata.entry_points(group='distutils.setup_keywords'):
-            vars(self).setdefault(ep.name, None)
+        for kw, _ in self._get_keywords():
+            vars(self).setdefault(kw, None)
         _Distribution.__init__(
             self,
             {
@@ -715,11 +724,16 @@ class Distribution(_Distribution):
         }
         return ep.name in removed
 
-    def _finalize_setup_keywords(self):
+    def _get_keywords(self):
         for ep in metadata.entry_points(group='distutils.setup_keywords'):
-            value = getattr(self, ep.name, None)
+            yield ep.name, ep.load  # don't call load to avoid evaluating module eagerly
+        yield from self._DISTUTILS_UNSUPPORTED_KEYWORDS.items()
+
+    def _finalize_setup_keywords(self):
+        for kw, load in dict(self._get_keywords()).items():  # use dict to deduplicate
+            value = getattr(self, kw, None)
             if value is not None:
-                ep.load()(self, ep.name, value)
+                load()(self, kw, value)
 
     def get_egg_cache_dir(self):
         egg_cache_dir = os.path.join(os.curdir, '.eggs')
