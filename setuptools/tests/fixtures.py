@@ -75,10 +75,12 @@ def setuptools_sdist(tmp_path_factory, request):
         if dist:
             return dist
 
-        subprocess.check_call([
-            sys.executable, "-m", "build", "--sdist",
-            "--outdir", str(tmp), str(request.config.rootdir)
-        ])
+        extra_setupcfg = _setupcfg_for_egginfo_isolation(tmp)
+        with contexts.environment(DIST_EXTRA_CONFIG=str(extra_setupcfg)):
+            subprocess.check_call([
+                sys.executable, "-m", "build", "--sdist",
+                "--outdir", str(tmp), str(request.config.rootdir)
+            ])
         return next(tmp.glob("*.tar.gz"))
 
 
@@ -93,11 +95,20 @@ def setuptools_wheel(tmp_path_factory, request):
         if dist:
             return dist
 
-        subprocess.check_call([
-            sys.executable, "-m", "build", "--wheel",
-            "--outdir", str(tmp) , str(request.config.rootdir)
-        ])
+        extra_setupcfg = _setupcfg_for_egginfo_isolation(tmp)
+        with contexts.environment(DIST_EXTRA_CONFIG=str(extra_setupcfg)):
+            subprocess.check_call([
+                sys.executable, "-m", "build", "--wheel",
+                "--outdir", str(tmp) , str(request.config.rootdir)
+            ])
         return next(tmp.glob("*.whl"))
+
+
+def _setupcfg_for_egginfo_isolation(tmp_path):
+    # TODO: Remove this workaround when `build_meta` isolation is more reliable
+    file = Path(tmp_path, "setup.cfg")
+    file.write_text(f"[egg_info]\negg_base={tmp_path}", encoding="utf-8")
+    return file
 
 
 @pytest.fixture
