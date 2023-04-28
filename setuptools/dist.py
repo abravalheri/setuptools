@@ -16,6 +16,8 @@ from distutils.fancy_getopt import translate_longopt
 from glob import iglob
 import itertools
 from contextlib import suppress
+from importlib import import_module
+from importlib.util import find_spec
 from typing import List, Optional, Set
 from pathlib import Path
 
@@ -751,10 +753,20 @@ class Distribution(_Distribution):
 
         eps = metadata.entry_points(group='distutils.commands', name=command)
         for ep in eps:
-            self.cmdclass[command] = cmdclass = ep.load()
-            return cmdclass
-        else:
-            return _Distribution.get_command_class(self, command)
+            return self.cmdclass.setdefault(command, ep.load())
+
+        return self._get_cmdclass(command) or super().get_command_class(command)
+
+    def _get_cmdclass(self, command):
+        """Take advantage of name convention to find setuptools implementation"""
+        if not find_spec(f"setuptools.command.{command}"):
+            return None
+
+        mod = import_module(f"setuptools.command.{command}")
+        if not hasattr(mod, command):
+            return None
+
+        return self.cmdclass.setdefault(command, getattr(mod, command))
 
     def print_commands(self):
         for ep in metadata.entry_points(group='distutils.commands'):
